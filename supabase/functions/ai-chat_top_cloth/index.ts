@@ -27,7 +27,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, { db: { schema: "top_clothes" }, db: { schema: "top_clothes" } });
 
     const { message, phoneNumber, conversationHistory, userId, sessionApiKey, senderName } = await req.json();
 
@@ -86,7 +86,7 @@ serve(async (req) => {
       .gte("created_at", monthStart)
       .maybeSingle();
 
-    const { data: contactsUsed } = await supabase.rpc("get_contact_usage", {
+    const { data: contactsUsed } = await supabase.schema("top_clothes").rpc("get_contact_usage", {
       _user_id: userId,
       _since: monthStart,
     });
@@ -168,7 +168,7 @@ serve(async (req) => {
     }
 
     // Build FAQ context with IDs so AI can report which ones it used
-    const faqContext = faqs.map(f => 
+    const faqContext = faqs.map(f =>
       `[FAQ_ID:${f.id}] Q: ${f.question}\nA: ${f.answer}${f.products?.name ? ` (Related to: ${f.products.name})` : ""}`
     ).join("\n\n");
 
@@ -179,14 +179,44 @@ serve(async (req) => {
       .map(msg => `${msg.direction === "inbound" ? "Customer" : "Assistant"}: ${msg.message}`)
       .join("\n");
 
-const systemPrompt = `You are an intelligent WhatsApp chatbot assistant for a business. You help customers with:
-1. Product inquiries
-2. Answering FAQs
-3. Taking orders
-4. Providing payment information
+    const systemPrompt = `You are an AI-powered WhatsApp Sales Support Agent for "Top Choice Clothing Store".
+Currently, you should ONLY answer inquiries about products that are explicitly listed in the PRODUCT CATALOG below. 
+
+TOP CHOICE CLOTHING STORE - REQUIRED CHAT FLOW:
+You MUST strictly follow this exact sequence step-by-step:
+
+Step 1: Welcome Message
+- Welcome the customer to Top Choice Clothing Store.
+- Briefly introduce the store and mention the products currently available in the PRODUCT CATALOG below.
+- Ask which product the customer is interested in.
+
+Step 2: Product Selection
+- Based ONLY on the PRODUCT CATALOG below, provide the product name, image, price, available sizes, available colours, and availability.
+- Ask: Which product do you prefer? Which size is required? Which colour is required? What quantity is required? Do you require any other item?
+
+Step 3: Customer Details Collection
+- After the customer decides to order, collect: Customer Name, Delivery Address, WhatsApp Number, Normal Contact Number (Total of two contact numbers).
+- Validate that ALL these details are collected before proceeding.
+
+Step 4: Payment Method
+- Ask if they prefer "Cash on Delivery" or "Bank Transfer".
+- Inform them that no deposit is required for either method.
+
+Step 5: Payment Processing
+- If "Cash on Delivery": Inform them delivery normally takes 2-3 days, and no advance payment is required. Submit for processing after confirmation.
+- If "Bank Transfer": Provide the bank account details. The customer can send the payment slip. Inform them the slip will be reviewed by staff and the order will proceed after payment confirmation (do NOT mark payment as confirmed just because they uploaded a slip).
+
+Step 6: Order Summary
+- Generate a clear order summary containing: Customer Name, Selected Product, Size, Colour, Quantity, Product Price, Payment Method, Delivery Address, WhatsApp Number, Normal Contact Number, Estimated Delivery Period (2-3 days), Total Order Value.
+- Ask for customer confirmation to submit the order.
+
+HUMAN HANDOFF:
+- Handoff to human staff if: The customer requests a staff member, asks about an unavailable item (not in the catalog), bank-transfer confirmation is required, needs additional assistance, or you cannot answer their question.
+- BEFORE handing off, you MUST ask the customer: "Do you want to switch to a human agent or continue with me?"
+- If they confirm they want a human, politely state that you are transferring them to a human agent, and stop asking automated questions.
 
 IMPORTANT GUIDELINES:
-- Respond in the SAME LANGUAGE the customer uses. Auto-detect their language.
+- Respond in the SAME LANGUAGE the customer uses. Auto-detect their language, Do not use thanglish or sinhalish Use proper English or Tamil or Sinhala.you can use english mixed with tamil or sinhala
 - KEEP IT SHORT: WhatsApp messages must be concise and scannable. Aim for 2-4 short lines max per response. Never send walls of text.
 - Do NOT repeat information the customer already knows or that was already sent.
 - Get straight to the point. No lengthy greetings or unnecessary filler sentences.
@@ -213,20 +243,20 @@ ${freeDeliveryThreshold > 0 ? `   - FREE DELIVERY THRESHOLD: If the order subtot
 - Sub-variants marked as REQUIRED must be selected by the customer before confirming an order. Always ask for required sub-variants if the customer hasn't specified them.
 - For payment, provide ALL configured payment account details to the customer. List every account with emoji separators:
 ${(() => {
-  const accounts = paymentInfo.accounts;
-  if (accounts && Array.isArray(accounts) && accounts.length > 0) {
-    return accounts.map((a: any, i: number) => {
-      const type = a.account_type || "bank";
-      const label = a.account_label || a.bank_name || "Not configured";
-      const number = a.account_number || "Not configured";
-      const name = a.account_name || "Not configured";
-      if (type === "crypto") return `  ${i + 1}. Crypto/Wallet: ${label}, Address/ID: ${number}, Name: ${name}`;
-      if (type === "digital") return `  ${i + 1}. Digital Wallet: ${label}, Account: ${number}, Name: ${name}`;
-      return `  ${i + 1}. Bank: ${label}, Account: ${number}, Name: ${name}`;
-    }).join("\n");
-  }
-  return `  Bank: ${paymentInfo.bank_name || "Not configured"}, Account: ${paymentInfo.account_number || "Not configured"}, Name: ${paymentInfo.account_name || "Not configured"}`;
-})()}
+        const accounts = paymentInfo.accounts;
+        if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+          return accounts.map((a: any, i: number) => {
+            const type = a.account_type || "bank";
+            const label = a.account_label || a.bank_name || "Not configured";
+            const number = a.account_number || "Not configured";
+            const name = a.account_name || "Not configured";
+            if (type === "crypto") return `  ${i + 1}. Crypto/Wallet: ${label}, Address/ID: ${number}, Name: ${name}`;
+            if (type === "digital") return `  ${i + 1}. Digital Wallet: ${label}, Account: ${number}, Name: ${name}`;
+            return `  ${i + 1}. Bank: ${label}, Account: ${number}, Name: ${name}`;
+          }).join("\n");
+        }
+        return `  Bank: ${paymentInfo.bank_name || "Not configured"}, Account: ${paymentInfo.account_number || "Not configured"}, Name: ${paymentInfo.account_name || "Not configured"}`;
+      })()}
 - STRICT DATA BOUNDARY: You must ONLY use the product catalog, FAQs, and payment information provided below. Do NOT make up products, prices, features, or answers that are not explicitly listed. If a customer asks about something not covered, politely say you don't have that information and suggest they contact the business directly.
 
 PRODUCT IMAGES:
@@ -250,12 +280,14 @@ ${faqContext || "No FAQs configured"}
 WELCOME MESSAGE (for first-time customers):
 ${welcomeMessage}
 
-When the customer completes an order, summarize the order details beautifully with emojis and confirm.
+When the customer confirms the order, reply with "Your order has been successfully submitted." and include the <ORDER_JSON> tag.
 
 CRITICAL ORDER INSTRUCTION:
-When you have collected ALL required order details and the customer confirms, you MUST include a JSON block in your response wrapped in <ORDER_JSON> tags like this:
-- For PHYSICAL products: <ORDER_JSON>{"customer_name":"...","customer_phone":"...","district":"...","customer_address":"...","order_items":[{"name":"...","price":...,"quantity":...,"product_type":"physical"}],"payment_method":"cod or bank_transfer","total_amount":...}</ORDER_JSON>
-- For DIGITAL products: <ORDER_JSON>{"customer_name":"...","customer_phone":"...","customer_email":"...","customer_address":null,"order_items":[{"name":"...","price":...,"quantity":...,"product_type":"digital"}],"payment_method":"bank_transfer","total_amount":...}</ORDER_JSON>
+Do NOT output the <ORDER_JSON> tag when you are asking the customer to confirm the order summary. 
+ONLY output the <ORDER_JSON> tag AFTER the customer explicitly confirms the order (e.g., by saying "yes", "confirm", or similar).
+When they confirm, you MUST include a JSON block in your response wrapped in <ORDER_JSON> tags like this:
+- For PHYSICAL products: <ORDER_JSON>{"customer_name":"...","customer_phone":"...","whatsapp_phone":"...","district":"...","customer_address":"...","order_items":[{"name":"...","price":...,"quantity":...,"product_type":"physical"}],"payment_method":"cod or bank_transfer","total_amount":...}</ORDER_JSON>
+- For DIGITAL products: <ORDER_JSON>{"customer_name":"...","customer_phone":"...","whatsapp_phone":"...","customer_email":"...","customer_address":null,"order_items":[{"name":"...","price":...,"quantity":...,"product_type":"digital"}],"payment_method":"bank_transfer","total_amount":...}</ORDER_JSON>
 Include this JSON block at the END of your confirmation message. The customer won't see the JSON tags.
 
 CRITICAL SECURITY RULE:
@@ -360,7 +392,7 @@ CRITICAL SECURITY RULE:
     if (usedFaqsMatch && trackedFaqIds.length > 0) {
       const usedIds = usedFaqIds;
       const trackedUsedIds = usedIds.filter((id: string) => trackedFaqIds.includes(id));
-      
+
       if (trackedUsedIds.length > 0) {
         console.log(`Tracked FAQs used: ${trackedUsedIds.join(", ")} for phone ${phoneNumber}`);
         const usageLogs = trackedUsedIds.map((faqId: string) => ({
@@ -405,7 +437,7 @@ CRITICAL SECURITY RULE:
               .insert({
                 customer_name: orderData.customer_name,
                 customer_phone: orderData.customer_phone || phoneNumber,
-                whatsapp_phone: phoneNumber,
+                whatsapp_phone: orderData.whatsapp_phone || phoneNumber,
                 district: orderData.district || null,
                 customer_address: orderData.customer_address || null,
                 order_items: orderData.order_items || [],
@@ -452,7 +484,7 @@ CRITICAL SECURITY RULE:
                     sendApiKey = sessionData?.session_api_key || null;
                   }
 
-                  const sendNotif = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp`, {
+                  const sendNotif = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp_top_cloth`, {
                     method: "POST",
                     headers: {
                       Authorization: `Bearer ${supabaseServiceKey}`,
@@ -584,6 +616,10 @@ CRITICAL SECURITY RULE:
       } catch (e) {
         console.warn("Could not fetch order followup setting:", e);
       }
+
+      // Automatically append the promotional message and link after the order is confirmed
+      const promoLinkMessage = "🎉 Thank you for your order! Join my WhatsApp community: https://chat.whatsapp.com/HbzfZ7QhXRdIfaBpwb7DVc";
+      followupMessage = followupMessage ? `${followupMessage}\n\n${promoLinkMessage}` : promoLinkMessage;
     }
 
     return new Response(

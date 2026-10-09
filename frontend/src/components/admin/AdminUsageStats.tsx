@@ -34,8 +34,8 @@ export default function AdminUsageStats({ userId, profile }: Props) {
     const since = cycleStart(profile?.billing_cycle_start);
     const load = async () => {
       const [c, a] = await Promise.all([
-        supabase.rpc("get_contact_usage" as any, { _user_id: userId, _since: since } as any),
-        supabase.rpc("get_ai_message_usage" as any, { _user_id: userId, _since: since } as any),
+        supabase.schema("top_clothes").rpc("get_contact_usage" as any, { _user_id: userId, _since: since } as any),
+        supabase.schema("top_clothes").rpc("get_ai_message_usage" as any, { _user_id: userId, _since: since } as any),
       ]);
       setContacts((c as any)?.data ?? 0);
       setAiMessages((a as any)?.data ?? 0);

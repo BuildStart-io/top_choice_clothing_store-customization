@@ -8,8 +8,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, ShoppingCart, Loader2, Phone, MapPin, CreditCard, Package, MessageSquare, Trash2, Download } from "lucide-react";
+import { Eye, ShoppingCart, Loader2, Phone, MapPin, CreditCard, Package, MessageSquare, Trash2, Download, Save, Link as LinkIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import LimitWarningBanner from "@/components/LimitWarningBanner";
@@ -27,28 +29,56 @@ interface Order {
   status: string;
   total_amount: number;
   created_at: string;
+  payment_slip_url: string | null;
+  payment_status: string | null;
+  delivery_status: string | null;
+  follow_up_status: string | null;
+  customer_notes: string | null;
 }
 
 const statusColors: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-800",
-  processing: "bg-blue-100 text-blue-800",
-  shipped: "bg-purple-100 text-purple-800",
-  delivered: "bg-green-100 text-green-800",
-  cancelled: "bg-red-100 text-red-800",
+  "New": "bg-blue-100 text-blue-800",
+  "Confirmed": "bg-indigo-100 text-indigo-800",
+  "Bank Transfer Pending": "bg-yellow-100 text-yellow-800",
+  "Payment Slip Received": "bg-orange-100 text-orange-800",
+  "Payment Confirmed": "bg-green-100 text-green-800",
+  "Cash on Delivery Confirmed": "bg-teal-100 text-teal-800",
+  "Processing": "bg-blue-200 text-blue-900",
+  "Out for Delivery": "bg-purple-100 text-purple-800",
+  "Delivered": "bg-green-200 text-green-900",
+  "Completed": "bg-gray-100 text-gray-800",
+  "Cancelled": "bg-red-100 text-red-800",
+  // Fallbacks for older orders
+  "pending": "bg-yellow-100 text-yellow-800",
+  "processing": "bg-blue-100 text-blue-800",
+  "shipped": "bg-purple-100 text-purple-800",
+  "delivered": "bg-green-100 text-green-800",
+  "cancelled": "bg-red-100 text-red-800",
 };
 
 const statusOptions = [
-  { value: "pending", label: "Pending" },
-  { value: "processing", label: "Processing" },
-  { value: "shipped", label: "Shipped" },
-  { value: "delivered", label: "Delivered" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "New", label: "New" },
+  { value: "Confirmed", label: "Confirmed" },
+  { value: "Bank Transfer Pending", label: "Bank Transfer Pending" },
+  { value: "Payment Slip Received", label: "Payment Slip Received" },
+  { value: "Payment Confirmed", label: "Payment Confirmed" },
+  { value: "Cash on Delivery Confirmed", label: "Cash on Delivery Confirmed" },
+  { value: "Processing", label: "Processing" },
+  { value: "Out for Delivery", label: "Out for Delivery" },
+  { value: "Delivered", label: "Delivered" },
+  { value: "Completed", label: "Completed" },
+  { value: "Cancelled", label: "Cancelled" },
 ];
 
 export default function Orders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  
+  // State for editable fields in details modal
+  const [editFields, setEditFields] = useState<Partial<Order>>({});
+  const [isSaving, setIsSaving] = useState(false);
+
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -106,6 +136,40 @@ export default function Orders() {
     }
   };
 
+  const saveOrderDetails = async () => {
+    if (!selectedOrder) return;
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          payment_status: editFields.payment_status,
+          delivery_status: editFields.delivery_status,
+          follow_up_status: editFields.follow_up_status,
+          customer_notes: editFields.customer_notes,
+          payment_slip_url: editFields.payment_slip_url
+        })
+        .eq("id", selectedOrder.id);
+
+      if (error) throw error;
+      toast({ title: "Order details saved successfully" });
+      
+      const updatedOrder = { ...selectedOrder, ...editFields } as Order;
+      setSelectedOrder(updatedOrder);
+      
+      // Update in the list
+      setOrders(orders.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+    } catch (error: any) {
+      toast({
+        title: "Error saving details",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const deleteOrder = async (orderId: string) => {
     try {
       const { error } = await supabase.from("orders").delete().eq("id", orderId);
@@ -118,27 +182,53 @@ export default function Orders() {
     }
   };
 
+  const openOrderModal = (order: Order) => {
+    setSelectedOrder(order);
+    setEditFields({
+      payment_status: order.payment_status || "",
+      delivery_status: order.delivery_status || "",
+      follow_up_status: order.follow_up_status || "",
+      customer_notes: order.customer_notes || "",
+      payment_slip_url: order.payment_slip_url || "",
+    });
+  };
+
   const exportOrders = (type: "csv" | "excel") => {
     if (orders.length === 0) {
       toast({ title: "No orders to export", variant: "destructive" });
       return;
     }
 
-    const headers = ["Order ID", "Customer Name", "Phone", "District", "Address", "Items", "Payment Method", "Status", "Total (LKR)", "Special Instructions", "Date"];
+    const headers = [
+      "Order ID", "Customer Name", "WhatsApp Number", "Normal Phone", 
+      "District", "Address", "Items", "Payment Method", "Order Status", 
+      "Payment Status", "Delivery Status", "Follow-Up Status", "Total (LKR)", 
+      "Customer Notes", "Special Instructions", "Date"
+    ];
+    
     const rows = orders.map((o) => {
       const items = Array.isArray(o.order_items)
-        ? (o.order_items as any[]).map((i: any) => `${i.name} x${i.quantity}`).join("; ")
+        ? (o.order_items as any[]).map((i: any) => {
+            const vars = i.variations ? Object.entries(i.variations).map(([k,v]) => `${k}:${v}`).join(",") : "";
+            return `${i.name}${vars ? ` (${vars})` : ""} x${i.quantity}`;
+          }).join("; ")
         : "";
+        
       return [
         o.id.slice(0, 8),
         o.customer_name,
+        o.whatsapp_phone || "",
         o.customer_phone,
         o.district || "",
         o.customer_address || "",
         items,
         o.payment_method === "cod" ? "Cash on Delivery" : "Bank Transfer",
         o.status,
+        o.payment_status || "",
+        o.delivery_status || "",
+        o.follow_up_status || "",
         o.total_amount.toFixed(2),
+        o.customer_notes || "",
         o.special_instructions || "",
         format(new Date(o.created_at), "yyyy-MM-dd HH:mm"),
       ];
@@ -180,7 +270,7 @@ export default function Orders() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-muted-foreground hidden sm:inline">Filter:</span>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px] sm:w-[150px]">
+              <SelectTrigger className="w-[180px] sm:w-[200px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -235,14 +325,16 @@ export default function Orders() {
                           <p className="font-medium">{order.customer_name}</p>
                           <p className="text-xs text-muted-foreground">{order.customer_phone}</p>
                         </div>
-                        <Badge className={statusColors[order.status]}>{order.status}</Badge>
+                        <Badge className={statusColors[order.status] || "bg-gray-100 text-gray-800"}>
+                          {order.status}
+                        </Badge>
                       </div>
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-medium">LKR {order.total_amount.toFixed(2)}</span>
                         <span className="text-muted-foreground">{format(new Date(order.created_at), "MMM d, yyyy")}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" className="flex-1" onClick={() => setSelectedOrder(order)}>
+                        <Button variant="outline" size="sm" className="flex-1" onClick={() => openOrderModal(order)}>
                           <Eye className="mr-2 h-4 w-4" />
                           View Details
                         </Button>
@@ -285,7 +377,7 @@ export default function Orders() {
                       {orders.map((order) => (
                         <TableRow key={order.id}>
                           <TableCell className="font-medium">{order.customer_name}</TableCell>
-                          <TableCell>{order.customer_phone}</TableCell>
+                          <TableCell>{order.whatsapp_phone || order.customer_phone}</TableCell>
                           <TableCell>LKR {order.total_amount.toFixed(2)}</TableCell>
                           <TableCell className="capitalize">
                             {order.payment_method === "cod" ? "Cash on Delivery" : "Bank Transfer"}
@@ -295,8 +387,8 @@ export default function Orders() {
                               value={order.status}
                               onValueChange={(value) => updateOrderStatus(order.id, value)}
                             >
-                              <SelectTrigger className="w-[130px]">
-                                <Badge className={statusColors[order.status]}>
+                              <SelectTrigger className="w-[180px]">
+                                <Badge className={statusColors[order.status] || "bg-gray-100 text-gray-800"}>
                                   {order.status}
                                 </Badge>
                               </SelectTrigger>
@@ -314,7 +406,7 @@ export default function Orders() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="icon" onClick={() => setSelectedOrder(order)}>
+                              <Button variant="ghost" size="icon" onClick={() => openOrderModal(order)}>
                                 <Eye className="h-4 w-4" />
                               </Button>
                               <AlertDialog>
@@ -347,8 +439,8 @@ export default function Orders() {
         </Card>
 
         {/* Order Details Dialog */}
-        <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <Dialog open={!!selectedOrder} onOpenChange={(open) => !open && setSelectedOrder(null)}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Order Details</DialogTitle>
               <DialogDescription>
@@ -357,43 +449,50 @@ export default function Orders() {
             </DialogHeader>
             {selectedOrder && (
               <div className="space-y-6">
-                {/* Customer Info */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm text-muted-foreground">Customer</h4>
+                
+                {/* 1. Customer Info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 border-b pb-4">
+                  <div className="space-y-1">
+                    <h4 className="font-medium text-sm text-muted-foreground">Customer Name</h4>
                     <p className="font-medium">{selectedOrder.customer_name}</p>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <h4 className="font-medium text-sm text-muted-foreground flex items-center gap-1">
-                      <Phone className="h-3 w-3" /> Phone
+                      <Phone className="h-3 w-3" /> WhatsApp Number
+                    </h4>
+                    <p>{selectedOrder.whatsapp_phone || "Not provided"}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-medium text-sm text-muted-foreground flex items-center gap-1">
+                      <Phone className="h-3 w-3" /> Normal Contact
                     </h4>
                     <p>{selectedOrder.customer_phone}</p>
                   </div>
+                  <div className="space-y-1 sm:col-span-2 md:col-span-3">
+                    <h4 className="font-medium text-sm text-muted-foreground flex items-center gap-1">
+                      <MapPin className="h-3 w-3" /> Delivery Address
+                    </h4>
+                    <p>
+                      {selectedOrder.customer_address 
+                        ? `${selectedOrder.customer_address}${selectedOrder.district ? `, ${selectedOrder.district}` : ""}`
+                        : "Not provided"}
+                    </p>
+                  </div>
                 </div>
 
-                {(selectedOrder.district || selectedOrder.customer_address) && (
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm text-muted-foreground flex items-center gap-1">
-                      <MapPin className="h-3 w-3" /> Shipping Location
-                    </h4>
-                    {selectedOrder.district && <p className="font-medium">District: {selectedOrder.district}</p>}
-                    {selectedOrder.customer_address && <p>{selectedOrder.customer_address}</p>}
-                  </div>
-                )}
-
-                {/* Order Items */}
+                {/* 2. Order Items */}
                 <div className="space-y-2">
                   <h4 className="font-medium text-sm text-muted-foreground flex items-center gap-1">
-                    <Package className="h-3 w-3" /> Order Items
+                    <Package className="h-3 w-3" /> Selected Products
                   </h4>
-                  <div className="border rounded-lg divide-y">
+                  <div className="border rounded-lg divide-y bg-muted/20">
                     {(Array.isArray(selectedOrder.order_items) ? selectedOrder.order_items : []).map((item: any, index: number) => (
-                      <div key={index} className="p-3 flex justify-between">
+                      <div key={index} className="p-3 flex justify-between items-center">
                         <div>
                           <p className="font-medium">{item.name}</p>
                           {item.variations && (
                             <p className="text-sm text-muted-foreground">
-                              {Object.entries(item.variations).map(([key, value]) => `${key}: ${value}`).join(", ")}
+                              {Object.entries(item.variations).map(([key, value]) => `${key}: ${value}`).join(" | ")}
                             </p>
                           )}
                         </div>
@@ -403,56 +502,108 @@ export default function Orders() {
                         </div>
                       </div>
                     ))}
+                    <div className="p-3 flex justify-between items-center bg-muted/40 font-bold border-t-2">
+                      <p>Total Order Value</p>
+                      <p className="text-lg text-primary">LKR {selectedOrder.total_amount.toFixed(2)}</p>
+                    </div>
                   </div>
                 </div>
 
-                {/* Payment & Total */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm text-muted-foreground flex items-center gap-1">
-                      <CreditCard className="h-3 w-3" /> Payment Method
-                    </h4>
-                    <p className="capitalize">
-                      {selectedOrder.payment_method === "cod" ? "Cash on Delivery" : "Bank Transfer"}
-                    </p>
+                {/* 3. Tracking & Finance Info (Editable) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t pt-4">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm text-muted-foreground flex items-center gap-1">
+                        <CreditCard className="h-3 w-3" /> Payment Method
+                      </h4>
+                      <p className="font-medium capitalize text-lg">
+                        {selectedOrder.payment_method === "cod" ? "Cash on Delivery" : "Bank Transfer"}
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <h4 className="font-medium text-sm text-muted-foreground">Payment Status</h4>
+                      <Input 
+                        value={editFields.payment_status || ""} 
+                        onChange={(e) => setEditFields({...editFields, payment_status: e.target.value})}
+                        placeholder="e.g., Pending, Received, Confirmed"
+                      />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <h4 className="font-medium text-sm text-muted-foreground flex items-center gap-1">
+                        <LinkIcon className="h-3 w-3" /> Payment Slip URL
+                      </h4>
+                      <Input 
+                        value={editFields.payment_slip_url || ""} 
+                        onChange={(e) => setEditFields({...editFields, payment_slip_url: e.target.value})}
+                        placeholder="https://link-to-slip.com/img.jpg"
+                      />
+                      {editFields.payment_slip_url && (
+                        <a href={editFields.payment_slip_url} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">
+                          View Payment Slip
+                        </a>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm text-muted-foreground">Total Amount</h4>
-                    <p className="text-2xl font-bold">LKR {selectedOrder.total_amount.toFixed(2)}</p>
+
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <h4 className="font-medium text-sm text-muted-foreground">Order Status (Main)</h4>
+                      <Select
+                        value={selectedOrder.status}
+                        onValueChange={(value) => updateOrderStatus(selectedOrder.id, value)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {statusOptions.map((status) => (
+                            <SelectItem key={status.value} value={status.value}>
+                              {status.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="font-medium text-sm text-muted-foreground">Delivery Status</h4>
+                      <Input 
+                        value={editFields.delivery_status || ""} 
+                        onChange={(e) => setEditFields({...editFields, delivery_status: e.target.value})}
+                        placeholder="e.g., Unfulfilled, Out for Delivery, Delivered"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="font-medium text-sm text-muted-foreground">Follow-Up Status</h4>
+                      <Input 
+                        value={editFields.follow_up_status || ""} 
+                        onChange={(e) => setEditFields({...editFields, follow_up_status: e.target.value})}
+                        placeholder="e.g., Contacted on Oct 12, Need to call back"
+                      />
+                    </div>
                   </div>
                 </div>
+                
+                {/* 4. Notes */}
+                <div className="space-y-2 border-t pt-4">
+                  <h4 className="font-medium text-sm text-muted-foreground">Customer Notes</h4>
+                  <Textarea 
+                    value={editFields.customer_notes || ""} 
+                    onChange={(e) => setEditFields({...editFields, customer_notes: e.target.value})}
+                    placeholder="Add internal notes about this customer or order..."
+                    className="min-h-[80px]"
+                  />
+                </div>
 
-                {selectedOrder.special_instructions && (
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm text-muted-foreground">Special Instructions</h4>
-                    <p className="text-sm bg-muted p-3 rounded-lg">{selectedOrder.special_instructions}</p>
-                  </div>
-                )}
-
-                {/* Status Update */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t">
-                  <div className="space-y-1">
-                    <h4 className="font-medium text-sm">Update Status</h4>
-                    <Select
-                      value={selectedOrder.status}
-                      onValueChange={(value) => updateOrderStatus(selectedOrder.id, value)}
-                    >
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {statusOptions.map((status) => (
-                          <SelectItem key={status.value} value={status.value}>
-                            {status.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-3">
+                {/* Footer actions */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t mt-6">
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
                     <Button
                       variant="outline"
-                      size="sm"
+                      className="w-full sm:w-auto"
                       onClick={() => {
                         const chatPhone = selectedOrder.whatsapp_phone || selectedOrder.customer_phone;
                         setSelectedOrder(null);
@@ -460,11 +611,22 @@ export default function Orders() {
                       }}
                     >
                       <MessageSquare className="mr-2 h-4 w-4" />
-                      See Chat
+                      Chat History
                     </Button>
-                    <p className="text-sm text-muted-foreground">
-                      {format(new Date(selectedOrder.created_at), "PPp")}
+                  </div>
+                  
+                  <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                    <p className="text-xs text-muted-foreground hidden sm:block">
+                      Placed: {format(new Date(selectedOrder.created_at), "PPp")}
                     </p>
+                    <Button onClick={saveOrderDetails} disabled={isSaving} className="w-full sm:w-auto">
+                      {isSaving ? (
+                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Save Details
+                    </Button>
                   </div>
                 </div>
               </div>

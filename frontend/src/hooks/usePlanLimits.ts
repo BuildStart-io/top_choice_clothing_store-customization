@@ -131,7 +131,7 @@ export function usePlanLimits() {
           supabase.from("orders").select("id", { count: "exact", head: true }).gte("created_at", monthStart),
           supabase.from("ai_usage_logs" as any).select("id", { count: "exact", head: true })
             .gte("created_at", monthStart),
-          supabase.rpc("get_contact_usage" as any, { _user_id: user.id, _since: monthStart } as any),
+          supabase.schema("top_clothes").rpc("get_contact_usage" as any, { _user_id: user.id, _since: monthStart } as any),
         ]);
 
         setUsage({

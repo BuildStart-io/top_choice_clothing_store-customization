@@ -23,8 +23,7 @@ serve(async (req) => {
     }
 
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!
+      Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY", { db: { schema: "top_clothes" }, db: { schema: "top_clothes" } })!
     );
 
     // Authenticate the user
@@ -44,8 +43,7 @@ serve(async (req) => {
 
     // Use service role to upsert the token (bypasses RLS)
     const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY", { db: { schema: "top_clothes" }, db: { schema: "top_clothes" } })!
     );
 
     const { error: upsertError } = await supabaseAdmin
