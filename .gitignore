@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 node_modules/
 dist/
 .DS_Store
@@ -6,3 +8,5 @@ dist/
 .gemini/
 *.exp
 .vercel
+docker/volumes/storage/
+docker/volumes/db/data/
