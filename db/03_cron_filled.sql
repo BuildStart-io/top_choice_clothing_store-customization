@@ -18,7 +18,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url     := 'http://api-gw:8000/functions/v1/process-message',
-    headers := '{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3ODY0NDc4NjYsImV4cCI6MjEwMTgwNzg2Nn0.X3SLU9ShCNBzlwY91D1CVoHsLHOfYOv6R6eJ8UpkhsQ"}'::jsonb,
+    headers := '{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3OTE1MjMzNzcsImV4cCI6MjEwNjg4MzM3N30.Wf9zWXZg-SQCt39ouF6E-v3mLV70QMhctpYG_q-JF3s"}'::jsonb,
     body    := '{"trigger":"cron"}'::jsonb
   );
   $$
@@ -31,7 +31,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url     := 'http://api-gw:8000/functions/v1/send-followups',
-    headers := '{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3ODY0NDc4NjYsImV4cCI6MjEwMTgwNzg2Nn0.X3SLU9ShCNBzlwY91D1CVoHsLHOfYOv6R6eJ8UpkhsQ"}'::jsonb,
+    headers := '{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3OTE1MjMzNzcsImV4cCI6MjEwNjg4MzM3N30.Wf9zWXZg-SQCt39ouF6E-v3mLV70QMhctpYG_q-JF3s"}'::jsonb,
     body    := '{}'::jsonb
   );
   $$
