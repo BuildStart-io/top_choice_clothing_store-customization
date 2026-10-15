@@ -262,11 +262,12 @@ ${(() => {
 PRODUCT IMAGES:
 - When a customer asks about a specific product that has images, include ALL the image URLs in separate <IMAGE_URL>url</IMAGE_URL> tags at the END of your response. Include all images for the product to give them a complete view.
 - Only use image URLs from the product catalog below. Never make up image URLs.
-- afrer conforming the order never send an image
+- CRITICAL: NEVER send any product images or videos when confirming the order or AFTER the order has been confirmed. Once an order is confirmed, or when confirming the order, do NOT include any <IMAGE_URL> or <VIDEO_URL> tags under ANY circumstances.
 
 PRODUCT VIDEOS:
 - When a customer asks about a specific product that has a video, include the video URL in a <VIDEO_URL>url</VIDEO_URL> tag at the END of your response (after IMAGE_URL if both exist). Only include one video per message.
 - Only use video URLs from the product catalog below. Never make up video URLs.
+- Do NOT send product videos when confirming the order or after the order has been confirmed.
 
 FAQ TRACKING:
 - Each FAQ below has an ID in [FAQ_ID:xxx] format.
@@ -281,12 +282,15 @@ ${faqContext || "No FAQs configured"}
 WELCOME MESSAGE (for first-time customers):
 ${welcomeMessage}
 
-When the customer confirms the order, reply with "Your order has been successfully submitted." and include the <ORDER_JSON> tag.
+When the customer confirms the order, reply with "Your order has been successfully submitted." and include the <ORDER_JSON> tag. NEVER include <IMAGE_URL> or <VIDEO_URL> tags when confirming the order or after the order has been confirmed.
 
 CRITICAL ORDER INSTRUCTION:
 Do NOT output the <ORDER_JSON> tag when you are asking the customer to confirm the order summary. 
 ONLY output the <ORDER_JSON> tag AFTER the customer explicitly confirms the order (e.g., by saying "yes", "confirm", or similar).
-When they confirm, you MUST include a JSON block in your response wrapped in <ORDER_JSON> tags like this:
+When confirming the order:
+- Reply with "Your order has been successfully submitted."
+- Do NOT output any product images, photos, or videos. Never output <IMAGE_URL> or <VIDEO_URL> tags.
+- Include the JSON block in your response wrapped in <ORDER_JSON> tags like this:
 - For PHYSICAL products: <ORDER_JSON>{"customer_name":"...","customer_phone":"...","whatsapp_phone":"...","district":"...","customer_address":"...","order_items":[{"name":"...","price":...,"quantity":...,"product_type":"physical"}],"payment_method":"cod or bank_transfer","total_amount":...}</ORDER_JSON>
 - For DIGITAL products: <ORDER_JSON>{"customer_name":"...","customer_phone":"...","whatsapp_phone":"...","customer_email":"...","customer_address":null,"order_items":[{"name":"...","price":...,"quantity":...,"product_type":"digital"}],"payment_method":"bank_transfer","total_amount":...}</ORDER_JSON>
 Include this JSON block at the END of your confirmation message. The customer won't see the JSON tags.
@@ -554,11 +558,51 @@ CRITICAL SECURITY RULE:
 
     // Extract image URLs if present
     const imageUrlMatches = Array.from(responseText.matchAll(/<IMAGE_URL>([\s\S]*?)<\/IMAGE_URL>/g));
-    const imageUrls = imageUrlMatches.map(m => m[1].trim());
-    const imageUrl = imageUrls.length > 0 ? imageUrls[0] : null;
+    let imageUrls = imageUrlMatches.map(m => m[1].trim());
+    let imageUrl = imageUrls.length > 0 ? imageUrls[0] : null;
     // Extract video URL if present
     const videoUrlMatch = responseText.match(/<VIDEO_URL>([\s\S]*?)<\/VIDEO_URL>/);
-    const videoUrl = videoUrlMatch ? videoUrlMatch[1].trim() : null;
+    let videoUrl = videoUrlMatch ? videoUrlMatch[1].trim() : null;
+
+    // Check if order is being confirmed in this response or was already confirmed
+    const isOrderConfirmedThisTurn = orderCreated || orderJsonMatches.length > 0 || /successfully\s+submitted/i.test(responseText);
+    const orderAlreadyConfirmedInHistory = (conversationHistory as ConversationMessage[] || []).some(
+      msg => msg.direction === "outbound" && (
+        /successfully\s+submitted/i.test(msg.message) ||
+        /order\s+has\s+been\s+(submitted|confirmed)/i.test(msg.message) ||
+        /thank\s+you\s+for\s+your\s+order/i.test(msg.message) ||
+        /📦\s*New\s*Order/i.test(msg.message)
+      )
+    );
+
+    let hasRecentOrder = false;
+    try {
+      const phoneFilter = contactKey || String(phoneNumber || "").replace(/\D/g, "");
+      if (phoneFilter) {
+        const { data: recentOrder } = await supabase
+          .from("orders")
+          .select("id")
+          .eq("user_id", userId)
+          .or(`customer_phone.ilike.%${phoneFilter}%,whatsapp_phone.ilike.%${phoneFilter}%`)
+          .gte("created_at", new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString())
+          .limit(1)
+          .maybeSingle();
+        if (recentOrder) {
+          hasRecentOrder = true;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not check recent orders:", e);
+    }
+
+    const customerAskedForImages = /(show|send|see|view|photo|picture|image|pic)/i.test(trimmedMessage);
+
+    if (isOrderConfirmedThisTurn || ((orderAlreadyConfirmedInHistory || hasRecentOrder) && !customerAskedForImages)) {
+      console.log(`Suppressing product images/video (confirmed turn: ${isOrderConfirmedThisTurn}, history: ${orderAlreadyConfirmedInHistory}, recent: ${hasRecentOrder})`);
+      imageUrls = [];
+      imageUrl = null;
+      videoUrl = null;
+    }
 
     // Aggressively strip any JSON or technical markup from the response
     let cleanResponse = responseText;
@@ -592,6 +636,22 @@ CRITICAL SECURITY RULE:
     cleanResponse = cleanResponse.replace(/\[FAQ_ID:[^\]]*\]/g, "");
     // Clean up leftover whitespace
     cleanResponse = cleanResponse.replace(/\n{3,}/g, "\n\n").trim();
+
+    if (isOrderConfirmedThisTurn || ((orderAlreadyConfirmedInHistory || hasRecentOrder) && !customerAskedForImages)) {
+      for (const p of products) {
+        if (p.images && Array.isArray(p.images)) {
+          for (const img of p.images) {
+            if (img && typeof img === "string") {
+              cleanResponse = cleanResponse.split(img).join("");
+            }
+          }
+        }
+        if (p.video_url && typeof p.video_url === "string") {
+          cleanResponse = cleanResponse.split(p.video_url).join("");
+        }
+      }
+      cleanResponse = cleanResponse.replace(/\n{3,}/g, "\n\n").trim();
+    }
 
     // Log AI usage independently of conversations
     await supabase.from("ai_usage_logs").insert({
