@@ -23,7 +23,7 @@ export default function Dashboard() {
     const fetchStats = async () => {
       try {
         const [pendingRes, recentRes] = await Promise.all([
-          supabase.from("orders").select("id", { count: "exact", head: true }).eq("status", "pending"),
+          supabase.from("orders").select("id", { count: "exact", head: true }).in("status", ["pending", "waiting_for_slip_verification", "waiting for slip verification"]),
           supabase.from("orders").select("*").order("created_at", { ascending: false }).limit(5),
         ]);
         setStats({
@@ -191,11 +191,15 @@ export default function Dashboard() {
                       <p className="font-medium text-sm sm:text-base">LKR {order.total_amount}</p>
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                         order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                        order.status === 'waiting_for_slip_verification' || order.status === 'waiting for slip verification' ? 'bg-amber-100 text-amber-800' :
                         order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
                         order.status === 'delivered' ? 'bg-green-100 text-green-800' :
+                        order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
-                        {order.status}
+                        {order.status === 'waiting_for_slip_verification' || order.status === 'waiting for slip verification'
+                          ? 'Waiting Slip'
+                          : order.status}
                       </span>
                     </div>
                   </div>

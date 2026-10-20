@@ -427,9 +427,9 @@ export default function AdminUserDetail() {
                           <TableCell className="font-medium">{o.customer_name}</TableCell>
                           <TableCell>{o.customer_phone}</TableCell>
                           <TableCell>LKR {o.total_amount}</TableCell>
-                          <TableCell className="capitalize">{o.payment_method}</TableCell>
+                          <TableCell className="capitalize">{o.payment_method === "bank_transfer" ? "Bank Transfer" : o.payment_method}</TableCell>
                           <TableCell>
-                            <Badge variant="outline">{o.status}</Badge>
+                            <Badge variant="outline">{o.status ? o.status.replace(/_/g, " ") : ""}</Badge>
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {new Date(o.created_at).toLocaleDateString()}

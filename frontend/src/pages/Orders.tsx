@@ -31,6 +31,8 @@ interface Order {
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800",
+  waiting_for_slip_verification: "bg-amber-100 text-amber-800",
+  "waiting for slip verification": "bg-amber-100 text-amber-800",
   processing: "bg-blue-100 text-blue-800",
   shipped: "bg-purple-100 text-purple-800",
   delivered: "bg-green-100 text-green-800",
@@ -39,11 +41,18 @@ const statusColors: Record<string, string> = {
 
 const statusOptions = [
   { value: "pending", label: "Pending" },
+  { value: "waiting_for_slip_verification", label: "Waiting for Slip Verification" },
   { value: "processing", label: "Processing" },
   { value: "shipped", label: "Shipped" },
   { value: "delivered", label: "Delivered" },
   { value: "cancelled", label: "Cancelled" },
 ];
+
+const getStatusLabel = (status: string) => {
+  const found = statusOptions.find((s) => s.value === status);
+  if (found) return found.label;
+  return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+};
 
 export default function Orders() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -61,7 +70,11 @@ export default function Orders() {
         .order("created_at", { ascending: false });
 
       if (statusFilter !== "all") {
-        query = query.eq("status", statusFilter);
+        if (statusFilter === "waiting_for_slip_verification") {
+          query = query.in("status", ["waiting_for_slip_verification", "waiting for slip verification"]);
+        } else {
+          query = query.eq("status", statusFilter);
+        }
       }
 
       const { data, error } = await query;
@@ -137,7 +150,7 @@ export default function Orders() {
         o.customer_address || "",
         items,
         o.payment_method === "cod" ? "Cash on Delivery" : "Bank Transfer",
-        o.status,
+        getStatusLabel(o.status),
         o.total_amount.toFixed(2),
         o.special_instructions || "",
         format(new Date(o.created_at), "yyyy-MM-dd HH:mm"),
@@ -235,7 +248,9 @@ export default function Orders() {
                           <p className="font-medium">{order.customer_name}</p>
                           <p className="text-xs text-muted-foreground">{order.customer_phone}</p>
                         </div>
-                        <Badge className={statusColors[order.status]}>{order.status}</Badge>
+                        <Badge className={statusColors[order.status] || "bg-gray-100 text-gray-800"}>
+                          {getStatusLabel(order.status)}
+                        </Badge>
                       </div>
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-medium">LKR {order.total_amount.toFixed(2)}</span>
@@ -295,9 +310,9 @@ export default function Orders() {
                               value={order.status}
                               onValueChange={(value) => updateOrderStatus(order.id, value)}
                             >
-                              <SelectTrigger className="w-[130px]">
-                                <Badge className={statusColors[order.status]}>
-                                  {order.status}
+                              <SelectTrigger className="w-[185px]">
+                                <Badge className={statusColors[order.status] || "bg-gray-100 text-gray-800"}>
+                                  {getStatusLabel(order.status)}
                                 </Badge>
                               </SelectTrigger>
                               <SelectContent>
@@ -437,7 +452,7 @@ export default function Orders() {
                       value={selectedOrder.status}
                       onValueChange={(value) => updateOrderStatus(selectedOrder.id, value)}
                     >
-                      <SelectTrigger className="w-[180px]">
+                      <SelectTrigger className="w-[220px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

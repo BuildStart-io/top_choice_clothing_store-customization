@@ -474,7 +474,7 @@ CREATE TABLE public.orders (
     whatsapp_phone text,
     district text,
     CONSTRAINT orders_payment_method_check CHECK ((payment_method = ANY (ARRAY['cod'::text, 'bank_transfer'::text]))),
-    CONSTRAINT orders_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'shipped'::text, 'delivered'::text, 'cancelled'::text])))
+    CONSTRAINT orders_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'waiting_for_slip_verification'::text, 'waiting for slip verification'::text, 'processing'::text, 'shipped'::text, 'delivered'::text, 'cancelled'::text])))
 );
 
 
