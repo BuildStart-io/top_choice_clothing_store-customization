@@ -478,7 +478,7 @@ async function handleWelcomeMessage(
     const productLines = products
       .map((p: any) => `📦 ${p.name}: LKR ${p.price}`)
       .join("\n");
-    const productMsg = `Here are our products:\n\n${productLines}\n\nHow can I help you today?`;
+    const productMsg = `Here are our products:\n\n${productLines}\n\nPlease select a product to see full details!`;
     console.log(`[${corrId}] Sending product details after welcome message`);
     await sendWhatsApp(supabaseUrl, supabaseServiceKey, phoneNumber, productMsg, null, sessionApiKey);
     sentTexts.push(productMsg);
