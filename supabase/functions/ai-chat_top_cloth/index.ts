@@ -304,7 +304,7 @@ When a customer enters the chat, follow the CHAT FLOW: first say welcome using t
 CRITICAL ORDER INSTRUCTION:
 - You MUST ONLY include the <ORDER_JSON> tag AFTER the customer explicitly confirms the order summary (in Step 2 of the ordering flow).
 - NEVER include <ORDER_JSON> when presenting the initial order summary.
-- NEVER include <ORDER_JSON> again on subsequent messages if the order has already been When a customer asks about or selects a product, review the chat history first. If you have already sent the image for that specific product in thicreated/confirmed in this chat.
+- NEVER include <ORDER_JSON> again on subsequent messages if the order has already been created/confirmed in this chat.
 - For PHYSICAL products: <ORDER_JSON>{"customer_name":"...","customer_phone":"...","district":"...","customer_address":"...","order_items":[{"name":"...","price":...,"quantity":...,"product_type":"physical"}],"payment_method":"cod or bank_transfer","total_amount":...}</ORDER_JSON>
 - For DIGITAL products: <ORDER_JSON>{"customer_name":"...","customer_phone":"...","customer_email":"...","customer_address":null,"order_items":[{"name":"...","price":...,"quantity":...,"product_type":"digital"}],"payment_method":"bank_transfer","total_amount":...}</ORDER_JSON>
 Include this JSON block at the END of your confirmation message ONLY ONCE per order. The customer won't see the JSON tags.
