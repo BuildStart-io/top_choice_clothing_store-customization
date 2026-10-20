@@ -466,6 +466,24 @@ async function handleWelcomeMessage(
       await sendWhatsAppMedia(supabaseUrl, supabaseServiceKey, phoneNumber, mediaUrl, sessionApiKey);
     }
   }
+
+  // Immediately send product details after the welcome message
+  const { data: products } = await supabase
+    .from("products")
+    .select("name, price")
+    .eq("is_active", true)
+    .eq("user_id", userId);
+
+  if (products && products.length > 0) {
+    const productLines = products
+      .map((p: any) => `📦 ${p.name}: LKR ${p.price}`)
+      .join("\n");
+    const productMsg = `Here are our products:\n\n${productLines}\n\nHow can I help you today?`;
+    console.log(`[${corrId}] Sending product details after welcome message`);
+    await sendWhatsApp(supabaseUrl, supabaseServiceKey, phoneNumber, productMsg, null, sessionApiKey);
+    sentTexts.push(productMsg);
+  }
+
   mark("send_end");
 
   if (sentTexts.length > 0) {

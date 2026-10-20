@@ -13,6 +13,11 @@ serve(async (req: Request) => {
     return new Response("BuildStart.io edge-runtime router OK", { status: 200 });
   }
 
+  // Reroute legacy / non-prefixed function calls to the _top_cloth function
+  if (!functionName.endsWith('_top_cloth')) {
+    functionName = `${functionName}_top_cloth`;
+  }
+
   try {
     const worker = await EdgeRuntime.userWorkers.create({
       servicePath: `/home/deno/functions/${functionName}`,
