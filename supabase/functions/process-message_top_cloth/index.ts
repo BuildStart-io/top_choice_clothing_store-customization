@@ -279,7 +279,7 @@ async function processMessage(
   mark("history_start");
   const { data: conversationHistory } = await supabase
     .from("conversations")
-    .select("message, direction, created_at")
+    .select("message, direction, created_at, metadata, message_type")
     .eq("phone_number", phoneNumber)
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
@@ -358,7 +358,12 @@ async function processMessage(
     message: replyMessage,
     direction: "outbound",
     message_type: replyImageUrls.length > 0 ? "image" : "text",
-    metadata: { correlationId: corrId, ...(faqMedia.length > 0 ? { faqMedia } : {}) },
+    metadata: {
+      correlationId: corrId,
+      ...(faqMedia.length > 0 ? { faqMedia } : {}),
+      ...(replyImageUrls.length > 0 ? { imageUrls: replyImageUrls } : {}),
+      ...(replyVideoUrl ? { videoUrl: replyVideoUrl } : {}),
+    },
     user_id: userId,
   });
   mark("store_outbound_end");

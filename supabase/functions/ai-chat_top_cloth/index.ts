@@ -10,6 +10,8 @@ interface ConversationMessage {
   message: string;
   direction: string;
   created_at: string;
+  metadata?: any;
+  message_type?: string;
 }
 
 serve(async (req) => {
@@ -192,14 +194,14 @@ When a customer enters or starts the chat (on their very first message, initial 
 - Second: Immediately dump the product details: list ALL available products from the PRODUCT CATALOG below (only the name and price is enough for this initial list).
 - Third: Invite the customer to select or choose a product from the list to see all details.
 
-2. PRODUCT SELECTION & FULL DETAILS (MANDATORY STEP):
-When the customer selects, mentions, or asks about a product (by name, item number, or description from the product list):
+2. PRODUCT SELECTION & FULL DETAILS (FIRST TIME A PRODUCT IS SELECTED):
+When the customer FIRST selects, mentions, or asks to see a product from the catalog (a product that has not had its full details and images presented yet in this chat):
 - Step 1: Tell ALL details about the selected product:
   - Product Name
   - Full Description and features
   - Price: Base price (and delivery fee if physical product)
   - Variations & Options: List all available variations and options (e.g. sizes, colors, types, sub-variants) with their respective prices
-  - Media: Send the product images using <IMAGE_URL>url</IMAGE_URL> tags at the END of your response (send images only once per product per chat)
+  - Media: Send the product images using <IMAGE_URL>url</IMAGE_URL> tags at the END of your response. Send images ONLY THIS ONE TIME for this product!
 - Step 2: At the end of your message, you MUST explicitly ask:
   "Would you like to place an order?" (Ask naturally in the exact language the customer used; e.g. in English: "Would you like to place an order?").
 
@@ -214,9 +216,12 @@ When the customer selects, mentions, or asks about a product (by name, item numb
 - If the customer says NO or asks other questions:
   - Politely answer their questions, suggest other products, or invite them to ask anything else.
 
-4. NORMAL REGULAR CONVERSATION:
-- For all subsequent interactions (after the initial welcome and product details have already been provided, or whenever prior assistant messages exist in the conversation history):
-- Carry out normal regular conversation: answer specific questions, explain variations, provide FAQs, guide customers in placing orders, provide payment details, and confirm orders.
+4. CONTINUING THE CONVERSATION ABOUT THE SAME PRODUCT:
+- For all subsequent interactions (after product details have already been provided, or whenever prior assistant messages exist in the conversation history):
+- DISCUSSING THE SAME PRODUCT: If you and the customer are already discussing a product (answering questions about sizes, colors, material, variations, delivery fees, order details, payment, etc.):
+  - STRICT IMAGE RULE: DO NOT send <IMAGE_URL> tags! Product images must be sent only ONCE per product. Once sent, NEVER repeat or resend the product images while talking about the same product!
+  - Do NOT repeat the full product description or catalog list.
+  - Simply answer the customer's specific question or guide them through the ordering flow.
 - If the customer sends a greeting like "hi" or "hello" mid-conversation, greet them briefly and continue normal conversation—do NOT repeat the welcome message and do NOT resend the entire product catalog or product details unless the customer explicitly asks to see them again.
 
 CRITICAL LANGUAGE CONSISTENCY RULE (HIGHEST PRIORITY):
@@ -283,13 +288,19 @@ ${(() => {
       })()}
 - STRICT DATA BOUNDARY: You must ONLY use the product catalog, FAQs, and payment information provided below. Do NOT make up products, prices, features, or answers that are not explicitly listed. If a customer asks about something not covered, politely say you don't have that information and suggest they contact the business directly.
 
-PRODUCT IMAGES:
-- When a customer selects or asks about a specific product that has images, include ALL the image URLs in separate <IMAGE_URL>url</IMAGE_URL> tags at the END of your response. Include all images for the product to give them a complete view.
-- The bot should send images of a product only ONCE during the chat with the customer (do not resend the same product images if they were already sent earlier in the conversation history).
+PRODUCT IMAGES (STRICT ONE-TIME RULE):
+- Send product images using <IMAGE_URL>url</IMAGE_URL> tags ONLY ONCE per product when the customer FIRST selects or asks about that product.
+- SAME PRODUCT RULE: As long as the customer and assistant are talking about the SAME product (asking follow-up questions, discussing sizes, colors, stock, pricing, delivery, or placing an order), you must NEVER include <IMAGE_URL> tags again!
+- If the conversation history shows that details or images for this product were already provided, DO NOT output any <IMAGE_URL> tags.
+- ONLY send images again if:
+  1. The customer explicitly asks to see the photos again (e.g. "send photos again", "can I see pictures?"), OR
+  2. The customer selects a DIFFERENT product from the catalog that has not been shown yet.
+- When sending images for the first time, include ALL image URLs for that product in separate <IMAGE_URL>url</IMAGE_URL> tags at the END of your response.
 - Only use image URLs from the product catalog below. Never make up image URLs.
 
-PRODUCT VIDEOS:
-- When a customer asks about a specific product that has video, include the video URL in a <VIDEO_URL>url</VIDEO_URL> tag at the END of your response (after IMAGE_URL if both exist). Only include one video per message.
+PRODUCT VIDEOS (STRICT ONE-TIME RULE):
+- When a customer asks about a specific product that has video for the first time, include the video URL in a <VIDEO_URL>url</VIDEO_URL> tag at the END of your response (after IMAGE_URL if both exist). Only include one video per message.
+- Send video ONLY ONE TIME per product. Do NOT repeat the video while continuing to discuss the same product.
 - Only use video URLs from the product catalog below. Never make up video URLs.
 
 FAQ TRACKING:
@@ -336,9 +347,19 @@ CRITICAL SECURITY RULE:
 
     if (conversationHistory && conversationHistory.length > 0) {
       for (const msg of conversationHistory as ConversationMessage[]) {
+        let content = msg.message;
+        const sentImages = (msg as any)?.metadata?.imageUrls;
+        const wasImageMsg = (msg as any)?.message_type === "image" || (Array.isArray(sentImages) && sentImages.length > 0);
+        const introducesProduct = msg.direction === "outbound" && products.some((p: any) =>
+          p.name && msg.message.toLowerCase().includes(p.name.toLowerCase()) &&
+          (msg.message.toLowerCase().includes("would you like to place an order") || msg.message.toLowerCase().includes("price") || msg.message.toLowerCase().includes("lkr"))
+        );
+        if (msg.direction === "outbound" && (wasImageMsg || introducesProduct)) {
+          content += "\n[System note: Product images were already sent to the customer for this product]";
+        }
         messages.push({
           role: msg.direction === "inbound" ? "user" : "assistant",
-          content: msg.message,
+          content,
         });
       }
     }
@@ -559,8 +580,59 @@ CRITICAL SECURITY RULE:
       }
     }
 
-    // Resolve FAQ attachments: only for FAQs the AI actually used, first time per conversation,
-    // max 4 attachments in one reply.
+    // Query prior outbound messages to check what has already been sent to this customer
+    const { data: priorRows } = await supabase
+      .from("conversations")
+      .select("metadata, message, message_type")
+      .eq("user_id", userId)
+      .eq("phone_number", phoneNumber)
+      .eq("direction", "outbound")
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    const alreadySentFaqMedia = new Set<string>();
+    const alreadySentImageUrls = new Set<string>();
+    const alreadySentVideoUrls = new Set<string>();
+
+    for (const row of priorRows || []) {
+      const meta = (row as any)?.metadata;
+      if (meta) {
+        if (Array.isArray(meta.faqMedia)) {
+          meta.faqMedia.forEach((u: string) => u && alreadySentFaqMedia.add(u.trim()));
+        }
+        if (Array.isArray(meta.imageUrls)) {
+          meta.imageUrls.forEach((u: string) => u && alreadySentImageUrls.add(u.trim()));
+        }
+        if (typeof meta.imageUrl === "string" && meta.imageUrl.trim()) {
+          alreadySentImageUrls.add(meta.imageUrl.trim());
+        }
+        if (typeof meta.videoUrl === "string" && meta.videoUrl.trim()) {
+          alreadySentVideoUrls.add(meta.videoUrl.trim());
+        }
+      }
+    }
+
+    // Check products already introduced or discussed in conversation history or prior messages
+    const allHistoryAndPriorText = [
+      ...(conversationHistory || []).map((m: any) => m.message || ""),
+      ...(priorRows || []).slice(0, 10).map((r: any) => r.message || "")
+    ].join("\n").toLowerCase();
+
+    for (const p of products) {
+      const pName = (p.name || "").toLowerCase().trim();
+      if (!pName) continue;
+      const images = Array.isArray(p.images) ? p.images : [];
+      const hasSentImages = images.some((img: string) => alreadySentImageUrls.has(img.trim()));
+      const wasDiscussed = allHistoryAndPriorText.includes(pName);
+
+      // If this product was already discussed or its images were already sent, mark its images as already sent
+      if (hasSentImages || wasDiscussed) {
+        images.forEach((img: string) => img && alreadySentImageUrls.add(img.trim()));
+        if (p.video_url) alreadySentVideoUrls.add(p.video_url.trim());
+      }
+    }
+
+    // Resolve FAQ attachments: only for FAQs the AI actually used, first time per conversation, max 4 attachments in one reply.
     let faqMedia: string[] = [];
     if (usedFaqIds.length > 0) {
       const candidates: string[] = [];
@@ -571,39 +643,45 @@ CRITICAL SECURITY RULE:
           if (typeof u === "string" && u.trim() && !candidates.includes(u)) candidates.push(u);
         }
       }
-
-      if (candidates.length > 0) {
-        // Skip anything already sent to this customer before
-        const { data: priorRows } = await supabase
-          .from("conversations")
-          .select("metadata")
-          .eq("user_id", userId)
-          .eq("phone_number", phoneNumber)
-          .eq("direction", "outbound")
-          .not("metadata", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(200);
-
-        const alreadySent = new Set<string>();
-        for (const row of priorRows || []) {
-          const sent = (row as any)?.metadata?.faqMedia;
-          if (Array.isArray(sent)) sent.forEach((u: string) => alreadySent.add(u));
-        }
-
-        faqMedia = candidates.filter((u) => !alreadySent.has(u)).slice(0, 4);
-        if (faqMedia.length > 0) {
-          console.log(`FAQ attachments to send (${faqMedia.length}): ${faqMedia.join(", ")}`);
-        }
+      faqMedia = candidates.filter((u) => !alreadySentFaqMedia.has(u)).slice(0, 4);
+      if (faqMedia.length > 0) {
+        console.log(`FAQ attachments to send (${faqMedia.length}): ${faqMedia.join(", ")}`);
       }
     }
 
+    // Check if customer explicitly asked to see pictures/photos
+    const customerMsg = String(message || "").toLowerCase();
+    const isExplicitPhotoRequest = /\b(photos?|pics?|pictures?|images?|tasveer|padam|padangal)\b/i.test(customerMsg);
+
     // Extract image URLs if present
     const imageUrlMatches = Array.from(responseText.matchAll(/<IMAGE_URL>([\s\S]*?)<\/IMAGE_URL>/g));
-    const imageUrls = imageUrlMatches.map(m => m[1].trim());
+    const extractedImageUrls = imageUrlMatches.map(m => m[1].trim()).filter(Boolean);
+
+    // Filter image URLs: if talking about the same product and photos were NOT explicitly requested, do not resend
+    let filteredImageUrls = extractedImageUrls;
+    if (!isExplicitPhotoRequest) {
+      filteredImageUrls = extractedImageUrls.filter(u => !alreadySentImageUrls.has(u));
+    }
+    // De-duplicate URLs within this message
+    filteredImageUrls = Array.from(new Set(filteredImageUrls));
+
+    const imageUrls = filteredImageUrls;
     const imageUrl = imageUrls.length > 0 ? imageUrls[0] : null;
+
+    if (extractedImageUrls.length > 0 && filteredImageUrls.length === 0) {
+      console.log(`[ai-chat] Suppressed ${extractedImageUrls.length} duplicate product image(s) for ${phoneNumber} (same product already discussed)`);
+    } else if (imageUrls.length > 0) {
+      console.log(`[ai-chat] Sending ${imageUrls.length} product image(s) for ${phoneNumber}`);
+    }
+
     // Extract video URL if present
     const videoUrlMatch = responseText.match(/<VIDEO_URL>([\s\S]*?)<\/VIDEO_URL>/);
-    const videoUrl = videoUrlMatch ? videoUrlMatch[1].trim() : null;
+    let rawVideoUrl = videoUrlMatch ? videoUrlMatch[1].trim() : null;
+    let videoUrl = rawVideoUrl;
+    if (videoUrl && !isExplicitPhotoRequest && alreadySentVideoUrls.has(videoUrl)) {
+      console.log(`[ai-chat] Suppressed duplicate product video for ${phoneNumber} (same product already discussed)`);
+      videoUrl = null;
+    }
 
     // Aggressively strip any JSON or technical markup from the response
     let cleanResponse = responseText;
