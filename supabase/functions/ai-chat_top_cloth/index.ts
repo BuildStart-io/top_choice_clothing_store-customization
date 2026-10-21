@@ -348,14 +348,10 @@ CRITICAL SECURITY RULE:
     if (conversationHistory && conversationHistory.length > 0) {
       for (const msg of conversationHistory as ConversationMessage[]) {
         let content = msg.message;
-        const sentImages = (msg as any)?.metadata?.imageUrls;
+        const sentImages = (msg as any)?.metadata?.imageUrls || ((msg as any)?.metadata?.imageUrl ? [(msg as any).metadata.imageUrl] : []);
         const wasImageMsg = (msg as any)?.message_type === "image" || (Array.isArray(sentImages) && sentImages.length > 0);
-        const introducesProduct = msg.direction === "outbound" && products.some((p: any) =>
-          p.name && msg.message.toLowerCase().includes(p.name.toLowerCase()) &&
-          (msg.message.toLowerCase().includes("would you like to place an order") || msg.message.toLowerCase().includes("price") || msg.message.toLowerCase().includes("lkr"))
-        );
-        if (msg.direction === "outbound" && (wasImageMsg || introducesProduct)) {
-          content += "\n[System note: Product images were already sent to the customer for this product]";
+        if (msg.direction === "outbound" && wasImageMsg) {
+          content += "\n[System note: Product images were sent with this message]";
         }
         messages.push({
           role: msg.direction === "inbound" ? "user" : "assistant",
@@ -612,21 +608,27 @@ CRITICAL SECURITY RULE:
       }
     }
 
-    // Check products already introduced or discussed in conversation history or prior messages
-    const allHistoryAndPriorText = [
-      ...(conversationHistory || []).map((m: any) => m.message || ""),
-      ...(priorRows || []).slice(0, 10).map((r: any) => r.message || "")
-    ].join("\n").toLowerCase();
+    // Also collect any images already sent in this session's conversation history
+    for (const msg of (conversationHistory || []) as any[]) {
+      const meta = msg?.metadata;
+      if (meta) {
+        if (Array.isArray(meta.imageUrls)) {
+          meta.imageUrls.forEach((u: string) => u && alreadySentImageUrls.add(u.trim()));
+        }
+        if (typeof meta.imageUrl === "string" && meta.imageUrl.trim()) {
+          alreadySentImageUrls.add(meta.imageUrl.trim());
+        }
+        if (typeof meta.videoUrl === "string" && meta.videoUrl.trim()) {
+          alreadySentVideoUrls.add(meta.videoUrl.trim());
+        }
+      }
+    }
 
+    // If any image of a product was already sent to this customer, mark all images for that product as sent
     for (const p of products) {
-      const pName = (p.name || "").toLowerCase().trim();
-      if (!pName) continue;
       const images = Array.isArray(p.images) ? p.images : [];
-      const hasSentImages = images.some((img: string) => alreadySentImageUrls.has(img.trim()));
-      const wasDiscussed = allHistoryAndPriorText.includes(pName);
-
-      // If this product was already discussed or its images were already sent, mark its images as already sent
-      if (hasSentImages || wasDiscussed) {
+      const hasSentImages = images.some((img: string) => img && alreadySentImageUrls.has(img.trim()));
+      if (hasSentImages) {
         images.forEach((img: string) => img && alreadySentImageUrls.add(img.trim()));
         if (p.video_url) alreadySentVideoUrls.add(p.video_url.trim());
       }
